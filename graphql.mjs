@@ -32,6 +32,8 @@ async function getRestaurants({ ciudad }) {
     `http://localhost:8080/api/v1/ciudad/${ciudad}/restaurantes`
   );
 
+  console.log(restaurants.data);
+
   return restaurants.data;
 }
 
