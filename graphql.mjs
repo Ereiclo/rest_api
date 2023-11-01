@@ -9,7 +9,7 @@ import axios from "axios";
 const schema = buildSchema(`
       type Query {
         getRestaurants(ciudad: String): [Restaurant]
-        getWeather(city: String!, date: String!): Weather!
+        getWeather(city: String!, date: String!): Weather
       }
       type Restaurant {
         nombre: String
@@ -27,21 +27,31 @@ const schema = buildSchema(`
 
 // Get single Image using id
 
-async function getRestaurants(args) {
+async function getRestaurants({ ciudad }) {
   const restaurants = await axios.get(
-    `http://localhost:8080/api/v1/ciudad/${args.ciudad}/restaurantes`
+    `http://localhost:8080/api/v1/ciudad/${ciudad}/restaurantes`
   );
 
   return restaurants.data;
 }
 
-async function getWeather({ city, date }){
+async function getWeather({ city, date }) {
   const weather = await axios.get(
     `http://localhost:8080/api/v1/ciudad/${city}/clima/${date}`
   );
-  console.log(weather.data.data[0])
-  let {time, minTemp, maxTemp}  = weather.data.data[0]
-  return {date: time, city, temperatureMax: maxTemp, temperatureMin: minTemp, lat: 0, lon: 0};
+
+  const forecast = weather.data;
+  const { time, minTemp, maxTemp } = forecast.data[0];
+
+  console.log(forecast);
+  return {
+    date: time,
+    city,
+    temperatureMax: maxTemp,
+    temperatureMin: minTemp,
+    lat: parseFloat(forecast.latitude),
+    lon: parseFloat(forecast.longitude),
+  };
 }
 
 //Get images using category
