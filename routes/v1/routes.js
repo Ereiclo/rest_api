@@ -2,7 +2,123 @@ const { DateTime } = require("luxon");
 const express = require("express");
 const axios = require("axios");
 const xml = require("xml");
+const { buildSchema } = require("graphql");
 const router = express.Router();
+const { graphqlHTTP } =  require("express-graphql");
+
+const schema = buildSchema(`
+  type Query {
+    getWeather(city: String!, date: String!): Weather!
+  }
+
+  type Weather {
+    city: String!
+    temperatureMax: Float!
+    temperatureMin: Float!
+    lat: Float!
+    lon: Float!
+    date: String!
+  }
+  `);
+
+const root = {
+  getWeather: async ({ city, date }) => {
+    console.log("GRAPHQL: ",city, date)
+    const timespanPosibleValues = [
+      { name: "manhana", offset: 1, days: 1 },
+      { name: "7dias", offset: 0, days: 7 },
+      { name: "hoy", offset: 0, days: 1 },
+    ];
+    const nombre = city;
+    const timespan = date;
+    const locationURL = `https://nominatim.openstreetmap.org/search?q=${nombre}&format=json`;
+
+    const timesSpanConfig = timespanPosibleValues.find(
+      (value) => value.name === timespan
+    );
+    console.log(timesSpanConfig);
+    try {
+      const locationResponse = await axios.get(locationURL);
+      const locations = locationResponse.data.sort((a, b) =>
+        a.importance <= b.importance ? -1 : 1
+      );
+
+      if (locations.length === 0) throw new Error("Not found");
+
+      const [resultLocation] = locations.slice(-1);
+      // console.log(timesSpanConfig);
+
+      const currentDate = DateTime.now();
+      const startDate = currentDate
+        .plus({ days: timesSpanConfig.offset })
+        .toFormat("yyyy-MM-dd");
+      const endDate = currentDate
+        .plus({ days: timesSpanConfig.offset + timesSpanConfig.days - 1 })
+        .toFormat("yyyy-MM-dd");
+
+      const forecastURL = `https://api.open-meteo.com/v1/forecast?start_date=${startDate}&end_date=${endDate}&latitude=${resultLocation.lat}&longitude=${resultLocation.lon}&daily=temperature_2m_min,temperature_2m_max&timezone=PST`;
+
+      // console.log(forecastURL);
+
+      const forecastResponse = await axios.get(forecastURL);
+
+      // console.log(forecastResponse.data);
+
+      if (false && req.MIMEType === "text/xml") {
+        const foreCastXML = [
+          { minTempUnit: forecastResponse.data.daily_units.temperature_2m_min },
+          { maxTempUnit: forecastResponse.data.daily_units.temperature_2m_max },
+          {
+            data: [{ hola: "adios" }, { si: "no" }],
+            data: forecastResponse.data.daily["time"].map((time, index) => {
+              return {
+                Forecast: [
+                  { time },
+                  {
+                    minTemp:
+                      forecastResponse.data.daily["temperature_2m_min"][index],
+                  },
+                  {
+                    maxTemp:
+                      forecastResponse.data.daily["temperature_2m_max"][index],
+                  },
+                ],
+              };
+            }),
+          },
+        ];
+        return xml(foreCastXML, { declaration: { encoding: "UTF-8" } });
+      } else {
+        const foreCastJSON = {
+          minTempUnit: forecastResponse.data.daily_units.temperature_2m_min,
+          maxTempUnit: forecastResponse.data.daily_units.temperature_2m_max,
+          data: forecastResponse.data.daily["time"].map((time, index) => {
+            return {
+              time,
+              minTemp: forecastResponse.data.daily["temperature_2m_min"][index],
+              maxTemp: forecastResponse.data.daily["temperature_2m_max"][index],
+            };
+          }),
+        };
+
+        return foreCastJSON;
+      }
+    } catch (error) {
+      console.log(error);
+      if (error.message === "Not found")
+        return {
+          message: `Información de la ciudad ${nombre} no disponible`,
+        };
+      else return { message: "Servidor no disponible" };
+    }
+  }
+}
+
+router.use('/graphql', graphqlHTTP({
+  schema: schema,
+  rootValue: root,
+  graphiql: true,
+}));
 
 const getMIMETypes = (req, res, next) => {
   const acceptedMIMEType = req.accepts(["application/json", "text/xml"]);
