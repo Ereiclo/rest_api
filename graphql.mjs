@@ -22,7 +22,6 @@ async function getRestaurants(args) {
   const restaurants = await axios.get(
     `http://localhost:3000/api/v1/ciudad/${args.ciudad}/restaurantes`
   );
-  console.log(restaurants.data);
 
   return restaurants.data;
 }
