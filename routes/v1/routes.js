@@ -6,7 +6,7 @@ const { buildSchema } = require("graphql");
 const router = express.Router();
 const { graphqlHTTP } =  require("express-graphql");
 
-const schema = buildSchema(`
+/*const schema = buildSchema(`
   type Query {
     getWeather(city: String!, date: String!): Weather!
   }
@@ -118,7 +118,7 @@ router.use('/graphql', graphqlHTTP({
   schema: schema,
   rootValue: root,
   graphiql: true,
-}));
+})); */
 
 const getMIMETypes = (req, res, next) => {
   const acceptedMIMEType = req.accepts(["application/json", "text/xml"]);
