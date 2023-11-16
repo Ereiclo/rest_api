@@ -4,6 +4,18 @@ const axios = require("axios");
 const xml = require("xml");
 const router = express.Router();
 
+//create unleash client and set up authentication
+const { initialize } = require("unleash-client");
+
+const unleash = initialize({
+  appName: "nueva_api",
+  url: "http://localhost:4242/api/",
+  customHeaders: {
+    Authorization:
+      "*:development.e6226b882629fbb7da13105cb5c765477737554781a53411fa5a47fc",
+  },
+});
+
 const getMIMETypes = (req, res, next) => {
   const acceptedMIMEType = req.accepts(["application/json", "text/xml"]);
 
@@ -22,24 +34,51 @@ router.get(
   getMIMETypes,
   async function (req, res) {
     const nombre = req.params.nombre;
-    const locationURL = `https://nominatim.openstreetmap.org/search?q=${nombre}&format=json`;
 
     const restaurantsURL = "https://api.openstreetmap.org/api/0.6/map";
 
-    try {
-      const locationResponse = await axios.get(locationURL);
-      const locations = locationResponse.data.sort((a, b) =>
-        a.importance <= b.importance ? -1 : 1
-      );
+    //get email from url query params
+    const email = req.query.email;
 
-      if (locations.length === 0) throw new Error("Not found");
-      const [resultLocation] = locations.slice(-1);
+    const isEnabled = email
+      ? unleash.isEnabled("nueva_api", { userId: email })
+      : unleash.isEnabled("nueva_api");
+
+    if (email) console.log(`Email: ${email}`);
+    else console.log("No email provided");
+
+    try {
+      let longitude;
+      let latitude;
+
+      if (isEnabled) {
+        console.log("Using new api");
+        const locationURL = `https://geocoding-api.open-meteo.com/v1/search?name=${nombre}`;
+        const locationResponse = await axios.get(locationURL);
+        const [resultLocation] = locationResponse.data.results;
+
+        latitude = resultLocation.latitude;
+        longitude = resultLocation.longitude;
+      } else {
+        console.log("Using old api");
+        const locationURL = `https://nominatim.openstreetmap.org/search?q=${nombre}&format=json`;
+        const locationResponse = await axios.get(locationURL);
+        const locations = locationResponse.data.sort((a, b) =>
+          a.importance <= b.importance ? -1 : 1
+        );
+
+        if (locations.length === 0) throw new Error("Not found");
+        const [resultLocation] = locations.slice(-1);
+
+        latitude = resultLocation.lat;
+        longitude = resultLocation.lon;
+      }
 
       const bbox = [
-        resultLocation.lon,
-        resultLocation.lat,
-        (parseFloat(resultLocation.lon) + 0.02).toString(),
-        (parseFloat(resultLocation.lat) + 0.02).toString(),
+        longitude,
+        latitude,
+        (parseFloat(longitude) + 0.02).toString(),
+        (parseFloat(latitude) + 0.02).toString(),
       ];
 
       const streetLocationsResponse = await axios.get(
@@ -102,6 +141,14 @@ router.get(
   "/ciudad/:nombre/clima/:timespan",
   getMIMETypes,
   async (req, res) => {
+    const email = req.query.email;
+
+    const isEnabled = email
+      ? unleash.isEnabled("nueva_api", { userId: email })
+      : unleash.isEnabled("nueva_api");
+
+    if (email) console.log(`Email: ${email}`);
+    else console.log("No email provided");
     const timespanPosibleValues = [
       { name: "manhana", offset: 1, days: 1 },
       { name: "7dias", offset: 0, days: 7 },
@@ -109,7 +156,6 @@ router.get(
     ];
     const nombre = req.params.nombre;
     const timespan = req.params.timespan;
-    const locationURL = `https://nominatim.openstreetmap.org/search?q=${nombre}&format=json`;
 
     const timesSpanConfig = timespanPosibleValues.find(
       (value) => value.name === timespan
@@ -140,17 +186,33 @@ router.get(
     }
 
     try {
-      const locationResponse = await axios.get(locationURL);
-      const locations = locationResponse.data.sort((a, b) =>
-        a.importance <= b.importance ? -1 : 1
-      );
+      let longitude;
+      let latitude;
 
-      if (locations.length === 0) throw new Error("Not found");
+      if (isEnabled) {
+        console.log("Using new api");
+        const locationURL = `https://geocoding-api.open-meteo.com/v1/search?name=${nombre}`;
+        const locationResponse = await axios.get(locationURL);
+        const [resultLocation] = locationResponse.data.results;
 
-      const [resultLocation] = locations.slice(-1);
+        latitude = resultLocation.latitude;
+        longitude = resultLocation.longitude;
+      } else {
+        console.log("Using old api");
+        const locationURL = `https://nominatim.openstreetmap.org/search?q=${nombre}&format=json`;
+        const locationResponse = await axios.get(locationURL);
+        const locations = locationResponse.data.sort((a, b) =>
+          a.importance <= b.importance ? -1 : 1
+        );
 
-      console.log(resultLocation);
-      const forecastURL = `https://api.open-meteo.com/v1/forecast?start_date=${startDate}&end_date=${endDate}&latitude=${resultLocation.lat}&longitude=${resultLocation.lon}&daily=temperature_2m_min,temperature_2m_max&timezone=PST`;
+        if (locations.length === 0) throw new Error("Not found");
+        const [resultLocation] = locations.slice(-1);
+
+        latitude = resultLocation.lat;
+        longitude = resultLocation.lon;
+      }
+
+      const forecastURL = `https://api.open-meteo.com/v1/forecast?start_date=${startDate}&end_date=${endDate}&latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_min,temperature_2m_max&timezone=PST`;
 
       const forecastResponse = await axios.get(forecastURL);
 
@@ -158,8 +220,8 @@ router.get(
         const foreCastXML = [
           { minTempUnit: forecastResponse.data.daily_units.temperature_2m_min },
           { maxTempUnit: forecastResponse.data.daily_units.temperature_2m_max },
-          { longitude: resultLocation.lon },
-          { latitude: resultLocation.lat },
+          { longitude },
+          { latitude },
           {
             data: forecastResponse.data.daily["time"].map((time, index) => {
               return {
@@ -184,8 +246,8 @@ router.get(
         const foreCastJSON = {
           minTempUnit: forecastResponse.data.daily_units.temperature_2m_min,
           maxTempUnit: forecastResponse.data.daily_units.temperature_2m_max,
-          latitude: resultLocation.lat,
-          longitude: resultLocation.lon,
+          latitude,
+          longitude,
           data: forecastResponse.data.daily["time"].map((time, index) => {
             return {
               time,
